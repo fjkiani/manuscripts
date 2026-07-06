@@ -59,16 +59,35 @@ ALLOWED_EXTENSIONS = {".docx", ".md", ".tex", ".txt"}
 ALLOWED_BIB_EXTENSIONS = {".bib", ".ris"}
 
 
+# Module-level task reference — prevents GC of the background worker task
+_worker_task: Optional[asyncio.Task] = None
+
+
 @app.on_event("startup")
 async def startup_event():
+    global _worker_task
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     log.info("manuscripts_api_started", upload_dir=str(UPLOAD_DIR))
 
     # Start inline ARQ worker when WORKER_MODE=inline (single-container deploy)
     if os.getenv("WORKER_MODE", "inline") == "inline":
-        import asyncio
-        asyncio.create_task(_run_inline_worker())
+        _worker_task = asyncio.create_task(_run_inline_worker())
+        _worker_task.add_done_callback(
+            lambda t: log.error("inline_worker_task_died", exc=str(t.exception()) if not t.cancelled() and t.exception() else None)
+        )
         log.info("inline_worker_started")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    global _worker_task
+    if _worker_task and not _worker_task.done():
+        _worker_task.cancel()
+        try:
+            await _worker_task
+        except asyncio.CancelledError:
+            pass
+    log.info("manuscripts_api_stopped")
 
 
 async def _run_inline_worker():
@@ -116,7 +135,13 @@ async def _run_inline_worker():
 @app.get("/health", tags=["System"])
 async def health_check():
     """Health check endpoint for Render."""
-    return {"status": "ok", "version": "1.0.0"}
+    worker_alive = _worker_task is not None and not _worker_task.done()
+    return {
+        "status": "ok",
+        "version": "1.0.0",
+        "worker": "running" if worker_alive else "stopped",
+        "worker_mode": os.getenv("WORKER_MODE", "inline"),
+    }
 
 
 @app.post("/api/jobs", tags=["Jobs"], summary="Submit a formatting job")
