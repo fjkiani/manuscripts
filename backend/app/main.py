@@ -64,6 +64,40 @@ async def startup_event():
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     log.info("manuscripts_api_started", upload_dir=str(UPLOAD_DIR))
 
+    # Start inline ARQ worker when WORKER_MODE=inline (single-container deploy)
+    if os.getenv("WORKER_MODE", "inline") == "inline":
+        import asyncio
+        asyncio.create_task(_run_inline_worker())
+        log.info("inline_worker_started")
+
+
+async def _run_inline_worker():
+    """Run ARQ worker as an asyncio background task (single-container mode)."""
+    import asyncio
+    from arq import create_pool
+    from arq.connections import RedisSettings
+    import urllib.parse
+
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+    parsed = urllib.parse.urlparse(redis_url)
+    settings = RedisSettings(
+        host=parsed.hostname or "localhost",
+        port=parsed.port or 6379,
+        password=parsed.password or None,
+        database=int(parsed.path.lstrip("/") or 0),
+    )
+
+    # Import WorkerSettings and run
+    from app.worker import WorkerSettings
+    from arq.worker import create_worker
+
+    log.info("arq_worker_starting", redis=f"{parsed.hostname}:{parsed.port}")
+    try:
+        worker = create_worker(WorkerSettings, redis_settings=settings)
+        await worker.async_run()
+    except Exception as e:
+        log.error("arq_worker_error", error=str(e))
+
 
 @app.get("/health", tags=["System"])
 async def health_check():
