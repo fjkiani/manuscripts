@@ -93,10 +93,16 @@ async def submit_job(
     await redis.aclose()
 
     # Enqueue via ARQ's proper mechanism (sorted set + msgpack serialization)
+    # Pass the full payload as a JSON string — process_manuscript_job expects this.
+    task_payload = json.dumps({
+        "job_id": job_id,
+        "style": style,
+        "outputs": outputs,
+    })
     arq_redis = await _get_arq_redis()
     await arq_redis.enqueue_job(
         "process_manuscript_job",
-        job_id,
+        task_payload,
         _job_id=job_id,
         _queue_name="manuscripts_queue",
     )
