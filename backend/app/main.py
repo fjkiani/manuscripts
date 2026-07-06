@@ -84,11 +84,13 @@ async def _run_inline_worker():
 
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
     parsed = urllib.parse.urlparse(redis_url)
+    ssl = parsed.scheme == "rediss"
     settings = RedisSettings(
         host=parsed.hostname or "localhost",
         port=parsed.port or 6379,
         password=parsed.password or None,
         database=int(parsed.path.lstrip("/") or 0),
+        ssl=ssl,
     )
 
     from app.worker import WorkerSettings

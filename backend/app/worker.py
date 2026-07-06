@@ -22,13 +22,15 @@ log = structlog.get_logger()
 
 
 def _parse_redis_settings(url: str) -> RedisSettings:
-    """Parse a Redis URL into ARQ RedisSettings."""
+    """Parse a Redis URL into ARQ RedisSettings, handling rediss:// (TLS)."""
     parsed = urllib.parse.urlparse(url)
+    ssl = parsed.scheme == "rediss"
     return RedisSettings(
         host=parsed.hostname or "localhost",
         port=parsed.port or 6379,
         password=parsed.password or None,
         database=int(parsed.path.lstrip("/") or 0),
+        ssl=ssl,
     )
 
 

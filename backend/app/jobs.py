@@ -26,8 +26,30 @@ JOB_STATUS = {
 }
 
 
+def _redis_settings_from_url(url: str):
+    """Parse a Redis URL into ARQ RedisSettings, handling rediss:// (TLS)."""
+    import urllib.parse
+    from arq.connections import RedisSettings
+    parsed = urllib.parse.urlparse(url)
+    ssl = parsed.scheme == "rediss"
+    return RedisSettings(
+        host=parsed.hostname or "localhost",
+        port=parsed.port or 6379,
+        password=parsed.password or None,
+        database=int(parsed.path.lstrip("/") or 0),
+        ssl=ssl,
+    )
+
+
 async def get_redis() -> aioredis.Redis:
     return await aioredis.from_url(REDIS_URL, decode_responses=True)
+
+
+async def _get_arq_redis():
+    """Return an ARQ ArqRedis connection pool for enqueue_job()."""
+    from arq.connections import create_pool
+    settings = _redis_settings_from_url(REDIS_URL)
+    return await create_pool(settings, default_queue_name="manuscripts_queue")
 
 
 async def submit_job(
@@ -66,18 +88,20 @@ async def submit_job(
         "output_files": {},
     }
 
-    # Store job state
+    # Store job state (worker reads full payload from here by job_id)
     await redis.setex(f"job:{job_id}", JOB_TTL, json.dumps(job_data))
-
-    # Enqueue the job payload (worker reads from Redis by job_id)
-    task_payload = json.dumps({
-        "job_id": job_id,
-        "style": style,
-        "outputs": outputs,
-    })
-    await redis.rpush("arq:queue:manuscripts_queue", task_payload)
-
     await redis.aclose()
+
+    # Enqueue via ARQ's proper mechanism (sorted set + msgpack serialization)
+    arq_redis = await _get_arq_redis()
+    await arq_redis.enqueue_job(
+        "process_manuscript_job",
+        job_id,
+        _job_id=job_id,
+        _queue_name="manuscripts_queue",
+    )
+    await arq_redis.aclose()
+
     log.info("job_enqueued", job_id=job_id)
 
 
