@@ -72,10 +72,14 @@ async def startup_event():
 
 
 async def _run_inline_worker():
-    """Run ARQ worker as an asyncio background task (single-container mode)."""
+    """Run ARQ worker as an asyncio background task (single-container mode).
+
+    Runs alongside uvicorn in the same process. Restarts automatically on error.
+    handle_signals=False prevents conflict with uvicorn's SIGINT/SIGTERM handlers.
+    """
     import asyncio
-    from arq import create_pool
     from arq.connections import RedisSettings
+    from arq.worker import create_worker
     import urllib.parse
 
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
@@ -87,16 +91,24 @@ async def _run_inline_worker():
         database=int(parsed.path.lstrip("/") or 0),
     )
 
-    # Import WorkerSettings and run
     from app.worker import WorkerSettings
-    from arq.worker import create_worker
 
-    log.info("arq_worker_starting", redis=f"{parsed.hostname}:{parsed.port}")
-    try:
-        worker = create_worker(WorkerSettings, redis_settings=settings)
-        await worker.async_run()
-    except Exception as e:
-        log.error("arq_worker_error", error=str(e))
+    retry_delay = 5
+    while True:
+        try:
+            log.info("arq_worker_starting", redis=f"{parsed.hostname}:{parsed.port}")
+            worker = create_worker(
+                WorkerSettings,
+                redis_settings=settings,
+                handle_signals=False,   # uvicorn owns signal handling
+            )
+            await worker.async_run()
+            log.info("arq_worker_stopped_cleanly")
+            break  # clean exit — don't restart
+        except Exception as e:
+            log.error("arq_worker_error", error=str(e))
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, 60)  # exponential backoff, cap 60s
 
 
 @app.get("/health", tags=["System"])
