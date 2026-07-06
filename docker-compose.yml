@@ -1,0 +1,82 @@
+version: "3.9"
+
+services:
+  # Redis — job queue and job state store
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Backend API server
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: final
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - ENVIRONMENT=development
+      - CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+      - MAX_FILE_SIZE_MB=50
+      - JOB_TTL_SECONDS=3600
+      - UPLOAD_DIR=/tmp/manuscripts
+    volumes:
+      - ./backend:/app/backend  # hot reload in dev
+      - manuscript_uploads:/tmp/manuscripts
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ARQ worker — processes formatting jobs
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: final
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - ENVIRONMENT=development
+      - UPLOAD_DIR=/tmp/manuscripts
+    volumes:
+      - ./backend:/app/backend
+      - manuscript_uploads:/tmp/manuscripts
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: python -m arq app.worker.WorkerSettings
+    restart: unless-stopped
+
+  # Frontend dev server (development only)
+  frontend:
+    image: node:20-slim
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      - api
+
+volumes:
+  redis_data:
+  manuscript_uploads:

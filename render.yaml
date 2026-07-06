@@ -1,0 +1,53 @@
+# Render Blueprint — deploy Manuscripts with one click
+# https://render.com/docs/blueprint-spec
+
+services:
+  # ── Web Service (API + Frontend) ──────────────────────────
+  - type: web
+    name: manuscripts
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: standard  # 2 CPU, 2GB RAM — needed for XeLaTeX compilation
+    healthCheckPath: /health
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          name: manuscripts-redis
+          type: redis
+          property: connectionString
+      - key: ENVIRONMENT
+        value: production
+      - key: MAX_FILE_SIZE_MB
+        value: "50"
+      - key: JOB_TTL_SECONDS
+        value: "3600"
+      - key: CORS_ORIGINS
+        value: "https://manuscripts-api.onrender.com,https://manuscripts.vercel.app,https://manuscripts-fjkiani.vercel.app"
+      - key: UPLOAD_DIR
+        value: "/tmp/manuscripts"
+    autoDeploy: true
+
+  # ── Worker Service (ARQ job processor) ────────────────────
+  - type: worker
+    name: manuscripts-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: python -m arq app.worker.WorkerSettings
+    plan: standard
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          name: manuscripts-redis
+          type: redis
+          property: connectionString
+      - key: ENVIRONMENT
+        value: production
+      - key: UPLOAD_DIR
+        value: "/tmp/manuscripts"
+    autoDeploy: true
+
+  # ── Redis ─────────────────────────────────────────────────
+  - type: redis
+    name: manuscripts-redis
+    plan: starter
+    maxmemoryPolicy: allkeys-lru
