@@ -6,7 +6,8 @@
 
 - **Web editor** with dual mode: rich text (WYSIWYG) and Markdown with live preview
 - **6 journal styles**: IEEE, Elsevier, Springer LNCS, APA 7th, AMA 11th, Generic
-- **4 output formats**: PDF (via XeLaTeX), DOCX, LaTeX source, HTML
+- **bioRxiv style**: Pandoc markdown → PDF via `tectonic` + `pandoc-crossref` + `citeproc` (CrisPRO MBD4 pipeline)
+- **4 output formats**: PDF (via XeLaTeX or tectonic), DOCX, LaTeX source, HTML
 - **4 input formats**: DOCX, Markdown, LaTeX, plain text
 - **Citation reformatting**: auto-converts between numbered [N] and author-date styles via CrossRef API
 - **Bibliography support**: BibTeX (.bib) and RIS (.ris) file import
@@ -95,6 +96,24 @@ curl http://localhost:8000/api/jobs/{job_id}
 curl -O http://localhost:8000/api/files/{job_id}/pdf
 ```
 
+### bioRxiv (Pandoc + tectonic)
+
+Matches the recorded build in CrisPRO `publications/00-mbd4-manuscript/mbd4_parp_response/rxiv/BUILD.md`:
+
+```bash
+curl -X POST http://localhost:8000/api/jobs \
+  -F "file=@manuscript.md" \
+  -F "style=biorxiv" \
+  -F "outputs=pdf,html,latex" \
+  -F "bib_file=@references.bib" \
+  -F "assets_zip=@rxiv_bundle.zip"
+```
+
+- **Manuscript**: Pandoc markdown with YAML front matter, `[@citations]`, `@fig:...` crossrefs.
+- **assets_zip** (optional): zip containing `manuscript.md`, `FIGURES/`, and/or `references.bib`.
+- **Primary upload** may also be a `.zip` bundle (extracted as the work directory).
+- Figure generation scripts remain in the source repo (`rxiv/FIGURES/*.py`); this service renders the PDF from the markdown bundle.
+
 ## Environment Variables
 
 | Variable | Default | Description |
@@ -105,17 +124,18 @@ curl -O http://localhost:8000/api/files/{job_id}/pdf
 | `CORS_ORIGINS` | `http://localhost:5173` | Allowed CORS origins |
 | `UPLOAD_DIR` | `/tmp/manuscripts` | Upload/output directory |
 | `ENVIRONMENT` | `production` | `development` enables hot reload |
+| `BIORXIV_PDF_ENGINE` | `tectonic` | PDF engine for `style=biorxiv` |
+| `PANDOC_CROSSREF_FILTER` | `pandoc-crossref` | Crossref filter binary name/path |
 
 ## Architecture
 
 ```
 Browser → FastAPI (main.py) → Redis queue → ARQ Worker
                                                 ↓
-                                    converter.py (DOCX/MD/TEX/TXT → items)
+                         style=biorxiv → pipelines/biorxiv_pandoc.py
+                           (pandoc + tectonic + crossref + citeproc)
                                                 ↓
-                                    formats/{style}.py (apply journal style)
-                                                ↓
-                                    renderer.py (PDF/DOCX/LaTeX/HTML)
+                         other styles → converter.py → formats/*.py → renderer.py
                                                 ↓
                                     /tmp/manuscripts/{job_id}/outputs/
 ```

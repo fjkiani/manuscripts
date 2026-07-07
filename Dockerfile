@@ -31,6 +31,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# pandoc-crossref + tectonic (bioRxiv / MBD4 manuscript pipeline)
+RUN curl -fsSL https://github.com/lierdakil/pandoc-crossref/releases/download/v0.3.17.0a/pandoc-crossref-Linux.tar.xz \
+    | tar -xJ -C /usr/local/bin \
+    && chmod +x /usr/local/bin/pandoc-crossref \
+    && curl -fsSL https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%400.15.0/tectonic-0.15.0-x86_64-unknown-linux-gnu.tar.gz \
+    | tar -xz -C /usr/local/bin --strip-components=1 tectonic-0.15.0-x86_64-unknown-linux-gnu/tectonic \
+    && chmod +x /usr/local/bin/tectonic
+
 # ============================================================
 # Stage 3: Final production image
 # ============================================================

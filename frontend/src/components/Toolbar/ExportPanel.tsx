@@ -10,9 +10,10 @@ interface ExportPanelProps {
   editorMode: 'rich' | 'markdown'
   uploadedFile: File | null
   bibFile: File | null
+  assetsZip: File | null
 }
 
-export function ExportPanel({ content, style, editorMode, uploadedFile, bibFile }: ExportPanelProps) {
+export function ExportPanel({ content, style, editorMode, uploadedFile, bibFile, assetsZip }: ExportPanelProps) {
   const [selectedFormats, setSelectedFormats] = useState<Set<string>>(new Set(['pdf', 'docx']))
   const { job, isPolling, error, startPolling, reset } = useJob()
 
@@ -50,6 +51,7 @@ export function ExportPanel({ content, style, editorMode, uploadedFile, bibFile 
         style,
         outputs: Array.from(selectedFormats),
         bibFile: bibFile || undefined,
+        assetsZip: assetsZip || undefined,
       })
       startPolling(result.job_id)
       toast.success('Job submitted! Processing your manuscript...')

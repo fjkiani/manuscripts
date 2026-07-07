@@ -71,6 +71,7 @@ export default function App() {
   const [showPreview, setShowPreview] = useState(true)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [bibFile, setBibFile] = useState<File | null>(null)
+  const [assetsZip, setAssetsZip] = useState<File | null>(null)
 
   // Load autosave on mount
   useEffect(() => {
@@ -155,10 +156,13 @@ export default function App() {
               <DropZone
                 onFileAccepted={handleFileAccepted}
                 onBibFileAccepted={setBibFile}
+                onAssetsZipAccepted={setAssetsZip}
                 currentFile={uploadedFile}
                 currentBibFile={bibFile}
+                currentAssetsZip={assetsZip}
                 onClearFile={() => setUploadedFile(null)}
                 onClearBibFile={() => setBibFile(null)}
+                onClearAssetsZip={() => setAssetsZip(null)}
               />
             </div>
 
@@ -173,6 +177,7 @@ export default function App() {
                 editorMode={editorMode}
                 uploadedFile={uploadedFile}
                 bibFile={bibFile}
+                assetsZip={assetsZip}
               />
             </div>
 
@@ -186,6 +191,8 @@ export default function App() {
                 {style === 'apa' && 'APA 7th: double-spaced, author-date citations, hanging indent refs.'}
                 {style === 'ama' && 'AMA 11th: superscript citations, Vancouver-style references.'}
                 {style === 'generic' && 'Clean publication-ready style, no journal constraints.'}
+                {style === 'biorxiv' &&
+                  'Pandoc markdown → PDF via tectonic, pandoc-crossref, and citeproc. Upload manuscript.md plus optional assets .zip (FIGURES/, references.bib).'}
               </p>
             </div>
           </div>

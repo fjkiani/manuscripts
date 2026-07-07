@@ -15,6 +15,7 @@ export interface SubmitJobParams {
   style: string
   outputs: string[]
   bibFile?: File
+  assetsZip?: File
 }
 
 export async function submitJob(params: SubmitJobParams): Promise<{ job_id: string; status: string }> {
@@ -24,6 +25,9 @@ export async function submitJob(params: SubmitJobParams): Promise<{ job_id: stri
   formData.append('outputs', params.outputs.join(','))
   if (params.bibFile) {
     formData.append('bib_file', params.bibFile)
+  }
+  if (params.assetsZip) {
+    formData.append('assets_zip', params.assetsZip)
   }
 
   const response = await fetch(`${API_BASE}/api/jobs`, {
@@ -73,10 +77,15 @@ export const JOURNAL_STYLES = [
   { id: 'apa', name: 'APA 7th', description: 'Author-date citations' },
   { id: 'ama', name: 'AMA 11th', description: 'Superscript numbered citations' },
   { id: 'generic', name: 'Generic', description: 'Clean publication-ready style' },
+  {
+    id: 'biorxiv',
+    name: 'bioRxiv (Pandoc)',
+    description: 'Pandoc + tectonic + crossref + citeproc (MBD4 pipeline)',
+  },
 ] as const
 
 export const OUTPUT_FORMATS = [
-  { id: 'pdf', name: 'PDF', icon: '📄', description: 'Publication-ready PDF via XeLaTeX' },
+  { id: 'pdf', name: 'PDF', icon: '📄', description: 'PDF via XeLaTeX or tectonic (bioRxiv)' },
   { id: 'docx', name: 'Word', icon: '📝', description: 'Editable DOCX with journal styles' },
   { id: 'latex', name: 'LaTeX', icon: '🔤', description: 'LaTeX source (.tex)' },
   { id: 'html', name: 'HTML', icon: '🌐', description: 'Styled HTML document' },

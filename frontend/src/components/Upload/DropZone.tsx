@@ -5,10 +5,13 @@ import { Upload, FileText, X } from 'lucide-react'
 interface DropZoneProps {
   onFileAccepted: (file: File) => void
   onBibFileAccepted?: (file: File) => void
+  onAssetsZipAccepted?: (file: File) => void
   currentFile: File | null
   currentBibFile: File | null
+  currentAssetsZip: File | null
   onClearFile: () => void
   onClearBibFile: () => void
+  onClearAssetsZip: () => void
 }
 
 const ACCEPTED_TYPES = {
@@ -16,6 +19,7 @@ const ACCEPTED_TYPES = {
   'text/markdown': ['.md'],
   'text/plain': ['.txt'],
   'application/x-tex': ['.tex'],
+  'application/zip': ['.zip'],
 }
 
 const BIB_TYPES = {
@@ -45,7 +49,15 @@ function FileChip({ file, onClear, label }: { file: File; onClear: () => void; l
 }
 
 export function DropZone({
-  onFileAccepted, onBibFileAccepted, currentFile, currentBibFile, onClearFile, onClearBibFile,
+  onFileAccepted,
+  onBibFileAccepted,
+  onAssetsZipAccepted,
+  currentFile,
+  currentBibFile,
+  currentAssetsZip,
+  onClearFile,
+  onClearBibFile,
+  onClearAssetsZip,
 }: DropZoneProps) {
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return
@@ -53,10 +65,12 @@ export function DropZone({
     const ext = file.name.split('.').pop()?.toLowerCase()
     if (ext === 'bib' || ext === 'ris') {
       onBibFileAccepted?.(file)
+    } else if (ext === 'zip') {
+      onAssetsZipAccepted?.(file)
     } else {
       onFileAccepted(file)
     }
-  }, [onFileAccepted, onBibFileAccepted])
+  }, [onFileAccepted, onBibFileAccepted, onAssetsZipAccepted])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -81,7 +95,7 @@ export function DropZone({
           {isDragActive ? 'Drop your file here' : 'Drop manuscript or click to browse'}
         </p>
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-          .docx · .md · .tex · .txt · .bib · .ris
+          .docx · .md · .tex · .txt · .bib · .ris · .zip
         </p>
       </div>
 
@@ -90,6 +104,9 @@ export function DropZone({
       )}
       {currentBibFile && (
         <FileChip file={currentBibFile} onClear={onClearBibFile} label="Bibliography" />
+      )}
+      {currentAssetsZip && (
+        <FileChip file={currentAssetsZip} onClear={onClearAssetsZip} label="Assets bundle (.zip)" />
       )}
     </div>
   )

@@ -60,6 +60,8 @@ async def submit_job(
     outputs: list[str],
     bib_bytes: Optional[bytes] = None,
     bib_suffix: Optional[str] = None,
+    assets_bytes: Optional[bytes] = None,
+    assets_filename: Optional[str] = None,
 ) -> None:
     """Store job metadata + file bytes in Redis and enqueue via ARQ.
 
@@ -80,6 +82,8 @@ async def submit_job(
         "file_suffix": file_suffix,
         "bib_b64": bib_b64,
         "bib_suffix": bib_suffix or "",
+        "assets_b64": base64.b64encode(assets_bytes).decode("ascii") if assets_bytes else "",
+        "assets_filename": assets_filename or "",
         "style": style,
         "outputs": outputs,
         "created_at": datetime.now(timezone.utc).isoformat(),

@@ -6,6 +6,7 @@ Run with: arq app.worker.WorkerSettings
 import json
 import os
 import asyncio
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -16,6 +17,7 @@ import urllib.parse
 from app.jobs import update_job_status, JOB_STATUS, REDIS_URL
 from app.converter import convert_input
 from app.renderer import render_outputs
+from app.pipelines.biorxiv_pandoc import extract_assets_zip, render_biorxiv_outputs
 from app.utils.storage import UPLOAD_DIR
 
 log = structlog.get_logger()
@@ -75,8 +77,55 @@ async def process_manuscript_job(ctx: dict, job_payload: str) -> dict:
         if job_data.get("bib_b64"):
             bib_bytes = base64.b64decode(job_data["bib_b64"])
             bib_suffix = job_data.get("bib_suffix", ".ris")
-            bib_path = job_dir / f"bibliography{bib_suffix}"
+            bib_name = "references.bib" if bib_suffix == ".bib" else f"bibliography{bib_suffix}"
+            bib_path = job_dir / bib_name
             bib_path.write_bytes(bib_bytes)
+
+        assets_zip_path = None
+        if job_data.get("assets_b64"):
+            assets_bytes = base64.b64decode(job_data["assets_b64"])
+            assets_name = job_data.get("assets_filename", "assets.zip")
+            assets_zip_path = job_dir / assets_name
+            assets_zip_path.write_bytes(assets_bytes)
+
+        output_dir = job_dir / "outputs"
+        output_dir.mkdir(exist_ok=True)
+
+        if style == "biorxiv":
+            log.info("biorxiv_pipeline", job_id=job_id)
+            work_dir = job_dir
+            if assets_zip_path:
+                work_dir = job_dir / "bundle"
+                await asyncio.get_event_loop().run_in_executor(
+                    None, extract_assets_zip, str(assets_zip_path), str(work_dir)
+                )
+            elif input_path.suffix.lower() == ".zip":
+                work_dir = job_dir / "bundle"
+                await asyncio.get_event_loop().run_in_executor(
+                    None, extract_assets_zip, str(input_path), str(work_dir)
+                )
+            elif input_path.suffix.lower() in (".md", ".markdown"):
+                manuscript_path = job_dir / "manuscript.md"
+                if input_path != manuscript_path:
+                    shutil.copy2(input_path, manuscript_path)
+
+            await update_job_status(job_id, JOB_STATUS["RENDERING"], progress=60)
+            output_files = await asyncio.get_event_loop().run_in_executor(
+                None,
+                render_biorxiv_outputs,
+                str(work_dir),
+                str(output_dir),
+                outputs,
+                str(bib_path) if bib_path else None,
+            )
+            await update_job_status(
+                job_id,
+                JOB_STATUS["DONE"],
+                progress=100,
+                output_files=output_files,
+            )
+            log.info("job_completed", job_id=job_id, output_files=list(output_files.keys()))
+            return {"status": "done", "job_id": job_id, "outputs": output_files}
 
         # Step 3: Convert input to internal representation
         log.info("converting_input", job_id=job_id, input_path=str(input_path))
@@ -104,9 +153,6 @@ async def process_manuscript_job(ctx: dict, job_payload: str) -> dict:
 
         # Step 4: Render all requested output formats
         log.info("rendering_outputs", job_id=job_id, outputs=outputs)
-        output_dir = job_dir / "outputs"
-        output_dir.mkdir(exist_ok=True)
-
         output_files = await asyncio.get_event_loop().run_in_executor(
             None,
             render_outputs,

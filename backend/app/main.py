@@ -55,8 +55,9 @@ ALLOWED_BIB_TYPES = {
     "application/octet-stream",
 }
 MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE_MB", "50")) * 1024 * 1024
-ALLOWED_EXTENSIONS = {".docx", ".md", ".tex", ".txt"}
+ALLOWED_EXTENSIONS = {".docx", ".md", ".tex", ".txt", ".zip"}
 ALLOWED_BIB_EXTENSIONS = {".bib", ".ris"}
+ALLOWED_ASSETS_EXTENSIONS = {".zip"}
 
 
 # Module-level task reference — prevents GC of the background worker task
@@ -148,16 +149,20 @@ async def health_check():
 async def create_job(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="Manuscript file (.docx, .md, .tex, .txt)"),
-    style: str = Form(..., description="Journal style: ieee | elsevier | springer | apa | ama | generic"),
+    style: str = Form(..., description="Journal style: ieee | elsevier | springer | apa | ama | generic | biorxiv"),
     outputs: str = Form("pdf,docx,latex,html", description="Comma-separated output formats"),
     bib_file: Optional[UploadFile] = File(None, description="Optional bibliography (.bib or .ris)"),
+    assets_zip: Optional[UploadFile] = File(
+        None,
+        description="Optional bundle zip (manuscript.md, FIGURES/, references.bib) for bioRxiv pipeline",
+    ),
 ):
     """
     Submit a manuscript formatting job.
     Returns a job_id immediately; poll GET /api/jobs/{job_id} for status.
     """
     # Validate style
-    valid_styles = {"ieee", "elsevier", "springer", "apa", "ama", "generic"}
+    valid_styles = {"ieee", "elsevier", "springer", "apa", "ama", "generic", "biorxiv"}
     if style not in valid_styles:
         raise HTTPException(400, f"Invalid style '{style}'. Choose from: {', '.join(sorted(valid_styles))}")
 
@@ -172,6 +177,13 @@ async def create_job(
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
         raise HTTPException(400, f"Unsupported file type '{suffix}'. Allowed: {ALLOWED_EXTENSIONS}")
+
+    if style == "biorxiv" and suffix not in {".md", ".zip"}:
+        raise HTTPException(
+            400,
+            "bioRxiv style requires a Pandoc markdown (.md) manuscript or a bundle .zip "
+            "(manuscript.md + FIGURES/ + references.bib).",
+        )
 
     # Read and size-check manuscript
     content = await file.read()
@@ -190,8 +202,15 @@ async def create_job(
             bib_content = await bib_file.read()
             bib_suffix = bib_ext
 
-    # Alias for clarity
-    bib_path = None  # kept for log message below
+    # Read optional assets bundle (FIGURES/, etc.)
+    assets_content: Optional[bytes] = None
+    assets_filename: Optional[str] = None
+    if assets_zip and assets_zip.filename:
+        assets_ext = Path(assets_zip.filename).suffix.lower()
+        if assets_ext not in ALLOWED_ASSETS_EXTENSIONS:
+            raise HTTPException(400, f"Unsupported assets type '{assets_ext}'. Use .zip")
+        assets_content = await assets_zip.read()
+        assets_filename = Path(assets_zip.filename).name
 
     # Submit to job queue (passes file bytes — worker has its own /tmp)
     await submit_job(
@@ -202,6 +221,8 @@ async def create_job(
         outputs=requested_outputs,
         bib_bytes=bib_content,
         bib_suffix=bib_suffix,
+        assets_bytes=assets_content,
+        assets_filename=assets_filename,
     )
 
     log.info("job_submitted", job_id=job_id, style=style, outputs=requested_outputs)
@@ -268,7 +289,7 @@ async def get_preview(
     Returns a quick HTML preview of the manuscript in the selected journal style.
     Uses a lightweight CSS-based render (not full Pandoc) for speed.
     """
-    valid_styles = {"ieee", "elsevier", "springer", "apa", "ama", "generic"}
+    valid_styles = {"ieee", "elsevier", "springer", "apa", "ama", "generic", "biorxiv"}
     if style not in valid_styles:
         raise HTTPException(400, f"Invalid style '{style}'. Choose from: {', '.join(sorted(valid_styles))}")
     from app.renderer import render_preview_html
