@@ -29,15 +29,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     fonts-dejavu \
     curl \
+    xz-utils \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # pandoc-crossref + tectonic (bioRxiv / MBD4 manuscript pipeline)
+# Notes:
+#   * python:3.11-slim ships without xz-utils, so tar -xJ (.tar.xz) needs the xz-utils package above.
+#   * pandoc-crossref archive contains {pandoc-crossref, pandoc-crossref.1}; extract only the binary.
+#   * tectonic release archive is a FLAT tarball (just `tectonic` at the top); no --strip-components,
+#     no filename filter. The upstream layout changed at some point; the previous version had it wrong.
 RUN curl -fsSL https://github.com/lierdakil/pandoc-crossref/releases/download/v0.3.17.0a/pandoc-crossref-Linux.tar.xz \
-    | tar -xJ -C /usr/local/bin \
+      | tar -xJ -C /usr/local/bin pandoc-crossref \
     && chmod +x /usr/local/bin/pandoc-crossref \
     && curl -fsSL https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%400.15.0/tectonic-0.15.0-x86_64-unknown-linux-gnu.tar.gz \
-    | tar -xz -C /usr/local/bin --strip-components=1 tectonic-0.15.0-x86_64-unknown-linux-gnu/tectonic \
-    && chmod +x /usr/local/bin/tectonic
+      | tar -xz -C /usr/local/bin \
+    && chmod +x /usr/local/bin/tectonic \
+    && /usr/local/bin/pandoc-crossref --version \
+    && /usr/local/bin/tectonic --version
 
 # ============================================================
 # Stage 3: Final production image
