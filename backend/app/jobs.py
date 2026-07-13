@@ -62,11 +62,14 @@ async def submit_job(
     bib_suffix: Optional[str] = None,
     assets_bytes: Optional[bytes] = None,
     assets_filename: Optional[str] = None,
+    image_files: Optional[list[dict]] = None,
 ) -> None:
     """Store job metadata + file bytes in Redis and enqueue via ARQ.
 
     File bytes are base64-encoded so they survive the Redis JSON round-trip
     and are accessible to the worker container (which has its own /tmp).
+
+    image_files: list of {"name": "fig1.png", "b64": "<base64 bytes>"}
     """
     import base64
     redis = await get_redis()
@@ -84,6 +87,7 @@ async def submit_job(
         "bib_suffix": bib_suffix or "",
         "assets_b64": base64.b64encode(assets_bytes).decode("ascii") if assets_bytes else "",
         "assets_filename": assets_filename or "",
+        "image_files": image_files or [],   # list of {name, b64}
         "style": style,
         "outputs": outputs,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -112,7 +116,7 @@ async def submit_job(
     )
     await arq_redis.aclose()
 
-    log.info("job_enqueued", job_id=job_id)
+    log.info("job_enqueued", job_id=job_id, image_count=len(image_files or []))
 
 
 async def get_job_status(job_id: str) -> Optional[dict]:

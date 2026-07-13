@@ -5,6 +5,7 @@ from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from typing import Optional
 from app.citations.reference_engine import resolve_references
+from app.formats._image_helper import add_image_to_doc
 
 FORMAT_NAME = "APA 7th Edition"
 FORMAT_SUFFIX = "_apa"
@@ -28,7 +29,7 @@ def build(items: list, output_path: str, ris_data: Optional[list] = None, zotero
 
     for item in items:
         t = item["type"]
-        text = item["text"]
+        text = item.get("text", "")
         runs = item.get("runs", [])
 
         if t == "title":
@@ -104,6 +105,18 @@ def build(items: list, output_path: str, ris_data: Optional[list] = None, zotero
             p.paragraph_format.first_line_indent = Cm(-1.27)
             p.paragraph_format.line_spacing = Pt(24)
             p.add_run(text).font.size = Pt(12)
+
+        elif t == "image":
+            add_image_to_doc(doc, item)
+
+        elif t == "supplementary_heading":
+            doc.add_page_break()
+            p = doc.add_paragraph()
+            run = p.add_run(text)
+            run.bold = True
+            run.font.size = Pt(14)
+            p.paragraph_format.space_before = Pt(12)
+            p.paragraph_format.space_after = Pt(6)
 
         elif t == "table":
             rows = item.get("rows", [])

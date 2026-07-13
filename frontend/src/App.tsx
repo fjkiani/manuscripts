@@ -72,6 +72,7 @@ export default function App() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [bibFile, setBibFile] = useState<File | null>(null)
   const [assetsZip, setAssetsZip] = useState<File | null>(null)
+  const [imageFiles, setImageFiles] = useState<File[]>([])
 
   // Load autosave on mount
   useEffect(() => {
@@ -157,6 +158,7 @@ export default function App() {
                 onFileAccepted={handleFileAccepted}
                 onBibFileAccepted={setBibFile}
                 onAssetsZipAccepted={setAssetsZip}
+                onImageFilesChanged={setImageFiles}
                 currentFile={uploadedFile}
                 currentBibFile={bibFile}
                 currentAssetsZip={assetsZip}
@@ -178,6 +180,7 @@ export default function App() {
                 uploadedFile={uploadedFile}
                 bibFile={bibFile}
                 assetsZip={assetsZip}
+                imageFiles={imageFiles}
               />
             </div>
 
@@ -193,6 +196,8 @@ export default function App() {
                 {style === 'generic' && 'Clean publication-ready style, no journal constraints.'}
                 {style === 'biorxiv' &&
                   'Pandoc markdown → PDF via tectonic, pandoc-crossref, and citeproc. Upload manuscript.md plus optional assets .zip (FIGURES/, references.bib).'}
+                {style === 'crispro' && 'CrisPRO Preprint: A4, booktabs tables, "For Research Use Only" footer.'}
+                {style === 'preprint' && 'Generic Preprint: A4, booktabs tables, no branding.'}
               </p>
             </div>
           </div>

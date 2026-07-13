@@ -64,6 +64,26 @@ STYLE_LATEX_SETTINGS = {
         "bibstyle": "plain",
         "columns": "onecolumn",
     },
+    "crispro": {
+        "documentclass": "article",
+        "classoption": "",
+        "fontsize": "11pt",
+        "geometry": "a4paper,margin=2.5cm",
+        "bibstyle": "plain",
+        "columns": "onecolumn",
+        "extra_packages": "booktabs,graphicx,hyperref,fancyhdr,setspace",
+        "footer": "For Research Use Only",
+    },
+    "preprint": {
+        "documentclass": "article",
+        "classoption": "",
+        "fontsize": "11pt",
+        "geometry": "a4paper,margin=2.5cm",
+        "bibstyle": "plain",
+        "columns": "onecolumn",
+        "extra_packages": "booktabs,graphicx,hyperref,setspace",
+        "footer": "",
+    },
 }
 
 STYLE_CSS = {
@@ -100,6 +120,40 @@ STYLE_CSS = {
         h1 { font-size: 14pt; font-weight: bold; }
         h2 { font-size: 12pt; font-weight: bold; }
     """,
+    "crispro": """
+        body { font-family: Georgia, 'Times New Roman', serif; font-size: 11pt; line-height: 1.4;
+               max-width: 750px; margin: 2.5cm auto; padding: 0 1em; text-align: justify; }
+        h1 { font-size: 20pt; font-weight: normal; text-align: center; margin-bottom: 0.3em; }
+        h2 { font-size: 12pt; font-weight: bold; margin-top: 1.2em; margin-bottom: 0.3em; }
+        h3 { font-size: 11pt; font-weight: bold; font-style: italic; margin-top: 1em; margin-bottom: 0.2em; }
+        .abstract { margin: 1em 0; }
+        .abstract-label { font-weight: bold; }
+        figure { text-align: center; margin: 1.5em 0; page-break-inside: avoid; }
+        figcaption { font-size: 0.9em; font-style: italic; margin-top: 0.4em; }
+        figcaption strong { font-style: normal; }
+        table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+        th { border-top: 2px solid #000; border-bottom: 1px solid #000; padding: 4px 8px; font-weight: bold; }
+        td { padding: 4px 8px; border: none; }
+        tr:last-child td { border-bottom: 2px solid #000; }
+        .references p { padding-left: 1.5em; text-indent: -1.5em; font-size: 0.9em; }
+        footer { font-style: italic; font-size: 0.85em; text-align: center; margin-top: 2em;
+                 border-top: 1px solid #ccc; padding-top: 0.5em; color: #555; }
+    """,
+    "preprint": """
+        body { font-family: Georgia, 'Times New Roman', serif; font-size: 11pt; line-height: 1.4;
+               max-width: 750px; margin: 2.5cm auto; padding: 0 1em; text-align: justify; }
+        h1 { font-size: 20pt; font-weight: normal; text-align: center; margin-bottom: 0.3em; }
+        h2 { font-size: 12pt; font-weight: bold; margin-top: 1.2em; margin-bottom: 0.3em; }
+        h3 { font-size: 11pt; font-weight: bold; font-style: italic; margin-top: 1em; margin-bottom: 0.2em; }
+        .abstract { margin: 1em 0; }
+        figure { text-align: center; margin: 1.5em 0; page-break-inside: avoid; }
+        figcaption { font-size: 0.9em; font-style: italic; margin-top: 0.4em; }
+        table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+        th { border-top: 2px solid #000; border-bottom: 1px solid #000; padding: 4px 8px; font-weight: bold; }
+        td { padding: 4px 8px; border: none; }
+        tr:last-child td { border-bottom: 2px solid #000; }
+        .references p { padding-left: 1.5em; text-indent: -1.5em; font-size: 0.9em; }
+    """,
 }
 
 
@@ -108,10 +162,14 @@ def render_outputs(
     output_dir: str,
     outputs: list,
     style: str,
+    figures_dir: Optional[str] = None,
 ) -> dict:
     """
     Render all requested output formats from the formatted DOCX.
     Returns dict mapping format name to output file path.
+
+    figures_dir: path to directory containing figure files; passed to Pandoc
+                 as --resource-path so images are resolved correctly.
     """
     output_files = {}
     output_path = Path(output_dir)
@@ -127,17 +185,17 @@ def render_outputs(
                 output_files["docx"] = str(dest)
 
             elif fmt == "pdf":
-                pdf_path = _render_pdf(formatted_docx_path, output_dir, style, settings)
+                pdf_path = _render_pdf(formatted_docx_path, output_dir, style, settings, figures_dir)
                 if pdf_path:
                     output_files["pdf"] = pdf_path
 
             elif fmt == "latex":
-                tex_path = _render_latex(formatted_docx_path, output_dir, settings)
+                tex_path = _render_latex(formatted_docx_path, output_dir, settings, figures_dir)
                 if tex_path:
                     output_files["latex"] = tex_path
 
             elif fmt == "html":
-                html_path = _render_html(formatted_docx_path, output_dir, style)
+                html_path = _render_html(formatted_docx_path, output_dir, style, figures_dir)
                 if html_path:
                     output_files["html"] = html_path
 
@@ -147,9 +205,62 @@ def render_outputs(
     return output_files
 
 
-def _render_pdf(docx_path: str, output_dir: str, style: str, settings: dict) -> Optional[str]:
+def _write_latex_header(output_dir: str, settings: dict) -> Optional[str]:
+    """Write a custom LaTeX header file for styles that need extra packages/formatting.
+
+    Returns the path to the header file, or None if no header is needed.
+    """
+    extra_packages = settings.get("extra_packages", "")
+    footer_text = settings.get("footer", "")
+
+    if not extra_packages and not footer_text:
+        return None
+
+    tex_lines = []
+
+    # Extra packages
+    if extra_packages:
+        for pkg in extra_packages.split(","):
+            pkg = pkg.strip()
+            if pkg:
+                tex_lines.append("\\usepackage{" + pkg + "}")
+
+    # Line spacing
+    if "setspace" in extra_packages:
+        tex_lines.append("\\setstretch{1.2}")
+
+    # Footer setup
+    if footer_text and "fancyhdr" in extra_packages:
+        tex_lines += [
+            "\\pagestyle{fancy}",
+            "\\fancyhf{}",
+            "\\fancyfoot[C]{\\small\\textit{" + footer_text + "}}",
+            "\\fancyfoot[R]{\\thepage}",
+            "\\renewcommand{\\headrulewidth}{0pt}",
+        ]
+    elif "fancyhdr" in extra_packages:
+        tex_lines += [
+            "\\pagestyle{fancy}",
+            "\\fancyhf{}",
+            "\\fancyfoot[C]{\\thepage}",
+            "\\renewcommand{\\headrulewidth}{0pt}",
+        ]
+
+    if not tex_lines:
+        return None
+
+    header_path = str(Path(output_dir) / "latex_header.tex")
+    Path(header_path).write_text("\n".join(tex_lines) + "\n", encoding="utf-8")
+    return header_path
+
+
+def _render_pdf(docx_path: str, output_dir: str, style: str, settings: dict,
+                figures_dir: Optional[str] = None) -> Optional[str]:
     """Convert DOCX → PDF via Pandoc + XeLaTeX."""
     output_path = Path(output_dir) / "manuscript.pdf"
+
+    # Write custom LaTeX header for styles that need it (crispro, preprint)
+    header_path = _write_latex_header(output_dir, settings)
 
     # Build Pandoc command
     cmd = [
@@ -170,6 +281,15 @@ def _render_pdf(docx_path: str, output_dir: str, style: str, settings: dict) -> 
     if settings.get("classoption"):
         cmd.append(f"--variable=classoption:{settings['classoption']}")
 
+    if header_path:
+        cmd.extend(["--include-in-header", header_path])
+
+    # Add resource path for figures
+    resource_paths = [output_dir]
+    if figures_dir and Path(figures_dir).exists():
+        resource_paths.append(figures_dir)
+    cmd.append("--resource-path=" + ":".join(resource_paths))
+
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=90,
@@ -180,17 +300,17 @@ def _render_pdf(docx_path: str, output_dir: str, style: str, settings: dict) -> 
             return str(output_path)
         else:
             log.warning("pdf_pandoc_failed", stderr=result.stderr[:500])
-            # Fallback: try with article class
-            return _render_pdf_fallback(docx_path, output_dir)
+            return _render_pdf_fallback(docx_path, output_dir, figures_dir)
     except subprocess.TimeoutExpired:
         log.error("pdf_render_timeout")
         return None
     except FileNotFoundError:
         log.error("pandoc_not_found")
-        return _render_pdf_fallback(docx_path, output_dir)
+        return _render_pdf_fallback(docx_path, output_dir, figures_dir)
 
 
-def _render_pdf_fallback(docx_path: str, output_dir: str) -> Optional[str]:
+def _render_pdf_fallback(docx_path: str, output_dir: str,
+                         figures_dir: Optional[str] = None) -> Optional[str]:
     """Fallback PDF render with minimal settings."""
     output_path = Path(output_dir) / "manuscript.pdf"
     cmd = [
@@ -199,6 +319,8 @@ def _render_pdf_fallback(docx_path: str, output_dir: str) -> Optional[str]:
         "--pdf-engine=xelatex",
         "--standalone",
     ]
+    if figures_dir and Path(figures_dir).exists():
+        cmd.append(f"--resource-path={output_dir}:{figures_dir}")
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if result.returncode == 0 and output_path.exists():
@@ -208,15 +330,21 @@ def _render_pdf_fallback(docx_path: str, output_dir: str) -> Optional[str]:
     return None
 
 
-def _render_latex(docx_path: str, output_dir: str, settings: dict) -> Optional[str]:
+def _render_latex(docx_path: str, output_dir: str, settings: dict,
+                  figures_dir: Optional[str] = None) -> Optional[str]:
     """Convert DOCX → LaTeX source via Pandoc."""
     output_path = Path(output_dir) / "manuscript.tex"
+    header_path = _write_latex_header(output_dir, settings)
     cmd = [
         "pandoc", docx_path,
         "-o", str(output_path),
         f"--variable=documentclass:{settings['documentclass']}",
         "--standalone",
     ]
+    if header_path:
+        cmd.extend(["--include-in-header", header_path])
+    if figures_dir and Path(figures_dir).exists():
+        cmd.append(f"--resource-path={output_dir}:{figures_dir}")
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if result.returncode == 0 and output_path.exists():
@@ -227,8 +355,10 @@ def _render_latex(docx_path: str, output_dir: str, settings: dict) -> Optional[s
     return None
 
 
-def _render_html(docx_path: str, output_dir: str, style: str) -> Optional[str]:
+def _render_html(docx_path: str, output_dir: str, style: str,
+                 figures_dir: Optional[str] = None) -> Optional[str]:
     """Convert DOCX → HTML via Pandoc with journal CSS."""
+    import shutil
     output_path = Path(output_dir) / "manuscript.html"
     css = STYLE_CSS.get(style, STYLE_CSS["generic"])
 
@@ -236,15 +366,29 @@ def _render_html(docx_path: str, output_dir: str, style: str) -> Optional[str]:
     css_path = Path(output_dir) / "style.css"
     css_path.write_text(css)
 
+    # Copy figures into output dir so HTML <img src> resolves correctly
+    if figures_dir:
+        figs = Path(figures_dir)
+        if figs.exists():
+            for img_file in figs.iterdir():
+                if img_file.is_file():
+                    dest = Path(output_dir) / img_file.name
+                    if not dest.exists():
+                        shutil.copy2(img_file, dest)
+
     cmd = [
         "pandoc", docx_path,
         "-o", str(output_path),
         "--standalone",
         f"--css={css_path}",
         "--metadata", f"title=Manuscript",
+        "--extract-media=.",
     ]
+    if figures_dir and Path(figures_dir).exists():
+        cmd.append(f"--resource-path={output_dir}:{figures_dir}")
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30,
+                                cwd=output_dir)
         if result.returncode == 0 and output_path.exists():
             return str(output_path)
         log.warning("html_render_failed", stderr=result.stderr[:300])

@@ -16,6 +16,7 @@ export interface SubmitJobParams {
   outputs: string[]
   bibFile?: File
   assetsZip?: File
+  imageFiles?: File[]
 }
 
 export async function submitJob(params: SubmitJobParams): Promise<{ job_id: string; status: string }> {
@@ -28,6 +29,11 @@ export async function submitJob(params: SubmitJobParams): Promise<{ job_id: stri
   }
   if (params.assetsZip) {
     formData.append('assets_zip', params.assetsZip)
+  }
+  if (params.imageFiles) {
+    for (const img of params.imageFiles) {
+      formData.append('images', img)
+    }
   }
 
   const response = await fetch(`${API_BASE}/api/jobs`, {
@@ -77,15 +83,13 @@ export const JOURNAL_STYLES = [
   { id: 'apa', name: 'APA 7th', description: 'Author-date citations' },
   { id: 'ama', name: 'AMA 11th', description: 'Superscript numbered citations' },
   { id: 'generic', name: 'Generic', description: 'Clean publication-ready style' },
-  {
-    id: 'biorxiv',
-    name: 'bioRxiv (Pandoc)',
-    description: 'Pandoc + tectonic + crossref + citeproc (MBD4 pipeline)',
-  },
+  { id: 'biorxiv', name: 'bioRxiv Preprint', description: 'Pandoc + tectonic pipeline for bioRxiv' },
+  { id: 'crispro', name: 'CrisPRO Preprint', description: 'A4, booktabs, "For Research Use Only" footer' },
+  { id: 'preprint', name: 'Generic Preprint', description: 'A4, booktabs, no branding' },
 ] as const
 
 export const OUTPUT_FORMATS = [
-  { id: 'pdf', name: 'PDF', icon: '📄', description: 'PDF via XeLaTeX or tectonic (bioRxiv)' },
+  { id: 'pdf', name: 'PDF', icon: '📄', description: 'Publication-ready PDF via XeLaTeX' },
   { id: 'docx', name: 'Word', icon: '📝', description: 'Editable DOCX with journal styles' },
   { id: 'latex', name: 'LaTeX', icon: '🔤', description: 'LaTeX source (.tex)' },
   { id: 'html', name: 'HTML', icon: '🌐', description: 'Styled HTML document' },

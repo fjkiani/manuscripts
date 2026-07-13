@@ -11,9 +11,10 @@ interface ExportPanelProps {
   uploadedFile: File | null
   bibFile: File | null
   assetsZip: File | null
+  imageFiles?: File[]
 }
 
-export function ExportPanel({ content, style, editorMode, uploadedFile, bibFile, assetsZip }: ExportPanelProps) {
+export function ExportPanel({ content, style, editorMode, uploadedFile, bibFile, assetsZip, imageFiles }: ExportPanelProps) {
   const [selectedFormats, setSelectedFormats] = useState<Set<string>>(new Set(['pdf', 'docx']))
   const { job, isPolling, error, startPolling, reset } = useJob()
 
@@ -52,6 +53,7 @@ export function ExportPanel({ content, style, editorMode, uploadedFile, bibFile,
         outputs: Array.from(selectedFormats),
         bibFile: bibFile || undefined,
         assetsZip: assetsZip || undefined,
+        imageFiles: imageFiles && imageFiles.length > 0 ? imageFiles : undefined,
       })
       startPolling(result.job_id)
       toast.success('Job submitted! Processing your manuscript...')

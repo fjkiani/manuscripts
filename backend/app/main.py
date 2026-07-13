@@ -58,6 +58,8 @@ MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE_MB", "50")) * 1024 * 1024
 ALLOWED_EXTENSIONS = {".docx", ".md", ".tex", ".txt", ".zip"}
 ALLOWED_BIB_EXTENSIONS = {".bib", ".ris"}
 ALLOWED_ASSETS_EXTENSIONS = {".zip"}
+ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".svg", ".pdf"}
+MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20 MB per image
 
 
 # Module-level task reference — prevents GC of the background worker task
@@ -156,13 +158,14 @@ async def create_job(
         None,
         description="Optional bundle zip (manuscript.md, FIGURES/, references.bib) for bioRxiv pipeline",
     ),
+    images: list[UploadFile] = File(default=[], description="Optional figure images (.png/.jpg/.jpeg/.svg/.pdf)"),
 ):
     """
     Submit a manuscript formatting job.
     Returns a job_id immediately; poll GET /api/jobs/{job_id} for status.
     """
     # Validate style
-    valid_styles = {"ieee", "elsevier", "springer", "apa", "ama", "generic", "biorxiv"}
+    valid_styles = {"ieee", "elsevier", "springer", "apa", "ama", "generic", "biorxiv", "crispro", "preprint"}
     if style not in valid_styles:
         raise HTTPException(400, f"Invalid style '{style}'. Choose from: {', '.join(sorted(valid_styles))}")
 
@@ -212,6 +215,23 @@ async def create_job(
         assets_content = await assets_zip.read()
         assets_filename = Path(assets_zip.filename).name
 
+    # Read and validate image files
+    import base64
+    image_file_list: list[dict] = []
+    if images:
+        if len(images) > 10:
+            raise HTTPException(400, "Too many image files. Max 10.")
+        for img in images:
+            if not img.filename:
+                continue
+            img_ext = Path(img.filename).suffix.lower()
+            if img_ext not in ALLOWED_IMAGE_EXTS:
+                raise HTTPException(400, f"Unsupported image type '{img_ext}'. Allowed: {ALLOWED_IMAGE_EXTS}")
+            img_bytes = await img.read()
+            if len(img_bytes) > MAX_IMAGE_SIZE:
+                raise HTTPException(413, f"Image '{img.filename}' too large. Max 20 MB.")
+            image_file_list.append({"name": Path(img.filename).name, "b64": base64.b64encode(img_bytes).decode("ascii")})
+
     # Submit to job queue (passes file bytes — worker has its own /tmp)
     await submit_job(
         job_id=job_id,
@@ -223,6 +243,7 @@ async def create_job(
         bib_suffix=bib_suffix,
         assets_bytes=assets_content,
         assets_filename=assets_filename,
+        image_files=image_file_list if image_file_list else None,
     )
 
     log.info("job_submitted", job_id=job_id, style=style, outputs=requested_outputs)
@@ -289,7 +310,7 @@ async def get_preview(
     Returns a quick HTML preview of the manuscript in the selected journal style.
     Uses a lightweight CSS-based render (not full Pandoc) for speed.
     """
-    valid_styles = {"ieee", "elsevier", "springer", "apa", "ama", "generic", "biorxiv"}
+    valid_styles = {"ieee", "elsevier", "springer", "apa", "ama", "generic", "biorxiv", "crispro", "preprint"}
     if style not in valid_styles:
         raise HTTPException(400, f"Invalid style '{style}'. Choose from: {', '.join(sorted(valid_styles))}")
     from app.renderer import render_preview_html

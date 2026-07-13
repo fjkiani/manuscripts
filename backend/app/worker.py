@@ -88,6 +88,15 @@ async def process_manuscript_job(ctx: dict, job_payload: str) -> dict:
             assets_zip_path = job_dir / assets_name
             assets_zip_path.write_bytes(assets_bytes)
 
+        # Decode uploaded image files to figures/ directory
+        figures_dir = job_dir / "figures"
+        if job_data.get("image_files"):
+            figures_dir.mkdir(exist_ok=True)
+            for img in job_data["image_files"]:
+                img_path = figures_dir / img["name"]
+                img_path.write_bytes(base64.b64decode(img["b64"]))
+            log.info("images_decoded", job_id=job_id, count=len(job_data["image_files"]))
+
         output_dir = job_dir / "outputs"
         output_dir.mkdir(exist_ok=True)
 
@@ -130,7 +139,8 @@ async def process_manuscript_job(ctx: dict, job_payload: str) -> dict:
         # Step 3: Convert input to internal representation
         log.info("converting_input", job_id=job_id, input_path=str(input_path))
         doc_data = await asyncio.get_event_loop().run_in_executor(
-            None, convert_input, str(input_path), str(bib_path) if bib_path else None
+            None, convert_input, str(input_path), str(bib_path) if bib_path else None,
+            str(figures_dir) if figures_dir.exists() else None
         )
         await update_job_status(job_id, JOB_STATUS["PROCESSING"], progress=35)
 
@@ -160,6 +170,7 @@ async def process_manuscript_job(ctx: dict, job_payload: str) -> dict:
             str(output_dir),
             outputs,
             style,
+            str(figures_dir) if figures_dir.exists() else None,
         )
         await update_job_status(
             job_id,
